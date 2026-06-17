@@ -3,7 +3,7 @@
 GeoDjango web app with PostGIS, Random Forest, and SHAP explainability.  
 Click anywhere on the map → get a risk prediction + SHAP explanation.
 
-![Web App Screenshot](Screenshot%20from%202026-06-17%2004-39-36.png)
+![Web App Screenshot](assets/screenshot.png)
 
 ## Stack
 

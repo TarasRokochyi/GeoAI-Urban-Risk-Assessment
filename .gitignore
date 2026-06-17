@@ -21,8 +21,9 @@ ml/
 .ipynb_checkpoints/
 *.ipynb
 
-# Generated images
+# Generated images (notebook output)
 *.png
+!assets/*.png
 
 # Docker volumes / env
 .env
