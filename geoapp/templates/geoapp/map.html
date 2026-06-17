@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GeoAI — Urban Risk Assessment | Lisbon</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet-side-by-side/leaflet-side-by-side.min.css">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; background: #1a1a2e; }
+
+  #map { position: fixed; left: 0; top: 0; width: calc(100% - 360px); height: 100vh; }
+
+  #panel {
+    position: fixed; right: 0; top: 0; width: 360px; height: 100vh;
+    background: #16213e; color: #e0e0e0;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+
+  #panel-header {
+    background: #0f3460; padding: 16px;
+    border-bottom: 1px solid #1a4a80;
+  }
+  #panel-header h2 { font-size: 16px; color: #fff; margin-bottom: 4px; }
+  #panel-header p { font-size: 11px; color: #aaa; }
+
+  #stats-bar {
+    display: flex; gap: 8px; padding: 10px 16px;
+    background: #0d2137; border-bottom: 1px solid #1a4a80;
+    font-size: 11px;
+  }
+  .stat { background: #0f3460; border-radius: 6px; padding: 6px 10px; text-align: center; flex: 1; }
+  .stat-val { font-size: 18px; font-weight: bold; color: #4fc3f7; }
+  .stat-lbl { color: #aaa; margin-top: 2px; }
+
+  #panel-body { flex: 1; overflow-y: auto; padding: 16px; }
+
+  .hint { text-align: center; padding: 30px 0; color: #666; font-size: 13px; }
+  .hint-icon { font-size: 40px; margin-bottom: 10px; }
+
+  #loading { display: none; text-align: center; padding: 30px; color: #4fc3f7; }
+
+  #result { display: none; }
+
+  .risk-badge {
+    display: inline-block; padding: 6px 18px; border-radius: 20px;
+    font-weight: bold; font-size: 22px; margin: 8px 0;
+  }
+  .risk-Low    { background: #1b5e20; color: #a5d6a7; }
+  .risk-Medium { background: #e65100; color: #ffcc80; }
+  .risk-High   { background: #b71c1c; color: #ef9a9a; }
+
+  .section-title {
+    font-size: 11px; font-weight: bold; color: #4fc3f7;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    margin: 14px 0 6px;
+  }
+
+  .prob-row { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
+  .prob-name { width: 70px; font-size: 12px; color: #ccc; }
+  .prob-track { flex: 1; height: 12px; background: #0f3460; border-radius: 4px; overflow: hidden; }
+  .prob-fill { height: 100%; border-radius: 4px; transition: width 0.4s; }
+  .prob-pct { width: 36px; font-size: 11px; text-align: right; color: #aaa; }
+
+  .shap-row { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
+  .shap-name { width: 130px; font-size: 11px; color: #ccc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .shap-bar-wrap { flex: 1; position: relative; height: 14px; }
+  .shap-bar-pos { position: absolute; left: 50%; height: 14px; background: #e74c3c; border-radius: 0 3px 3px 0; }
+  .shap-bar-neg { position: absolute; right: 50%; height: 14px; background: #3498db; border-radius: 3px 0 0 3px; }
+  .shap-val { width: 52px; font-size: 10px; text-align: right; color: #888; }
+
+  .feat-row { display: flex; justify-content: space-between; font-size: 11px; padding: 3px 0; border-bottom: 1px solid #1a3050; }
+  .feat-name { color: #aaa; }
+  .feat-val  { color: #fff; font-family: monospace; }
+
+  #panel-footer {
+    padding: 8px 16px; background: #0d2137;
+    border-top: 1px solid #1a4a80; font-size: 10px; color: #555;
+  }
+
+  .legend { display: flex; gap: 10px; flex-wrap: wrap; }
+  .legend-item { display: flex; align-items: center; gap: 4px; font-size: 11px; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+
+  #split-btn {
+    position: absolute; top: 10px; right: 370px; z-index: 1000;
+    background: #0f3460; color: #4fc3f7; border: 1px solid #1a4a80;
+    padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px;
+  }
+  #split-btn:hover { background: #1a4a80; }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<button id="split-btn" onclick="toggleSplit()">Split Map</button>
+
+<div id="panel">
+  <div id="panel-header">
+    <h2>GeoAI — Urban Risk Assessment</h2>
+    <p>GeoDjango + PostGIS + Random Forest + SHAP &nbsp;|&nbsp; Lisbon</p>
+  </div>
+
+  <div id="stats-bar">
+    <div class="stat">
+      <div class="stat-val" id="stat-pois">{{ poi_count }}</div>
+      <div class="stat-lbl">POI в базі</div>
+    </div>
+    <div class="stat">
+      <div class="stat-val" id="stat-model">{% if model_ready %}✓{% else %}✗{% endif %}</div>
+      <div class="stat-lbl">Модель</div>
+    </div>
+  </div>
+
+  <div id="panel-body">
+    <div class="hint" id="hint">
+      <div class="hint-icon">📍</div>
+      Натисніть на карту<br>для оцінки ризику місця
+    </div>
+
+    <div id="loading">⏳ Аналіз точки...</div>
+
+    <div id="result">
+      <div class="section-title">Рівень ризику</div>
+      <span class="risk-badge" id="risk-badge">—</span>
+      <div style="font-size:12px;color:#888">Впевненість: <span id="confidence"></span>%</div>
+
+      <div class="section-title">Ймовірності</div>
+      <div id="proba-bars"></div>
+
+      <div class="section-title">SHAP — вплив ознак</div>
+      <div style="font-size:10px;color:#666;margin-bottom:6px">🔴 збільшує ризик &nbsp; 🔵 зменшує ризик</div>
+      <div id="shap-bars"></div>
+
+      <div class="section-title">Просторові ознаки</div>
+      <div id="features-table"></div>
+    </div>
+  </div>
+
+  <div id="panel-footer">
+    <div class="legend" id="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:#e74c3c"></div> hospital</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#3498db"></div> school</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#f39c12"></div> cafe</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#2ecc71"></div> pharmacy</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#2c3e50"></div> police</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#e67e22"></div> fire_station</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#95a5a6"></div> parking</div>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-side-by-side/leaflet-side-by-side.min.js"></script>
+<script>
+// ── Карта ─────────────────────────────────────────────────────────────────────
+const map = L.map('map').setView([38.7169, -9.1393], 13);
+
+const osmTile = L.tileLayer(
+  'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+  {attribution: '© OpenStreetMap contributors'}
+);
+const darkTile = L.tileLayer(
+  'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+  {attribution: '© OpenStreetMap contributors © CARTO'}
+);
+
+darkTile.addTo(map);
+
+// ── POI шар (оригінальні категорії) ──────────────────────────────────────────
+const COLORS = {
+  hospital:'#e74c3c', school:'#3498db', cafe:'#f39c12',
+  pharmacy:'#2ecc71', police:'#2c3e50', fire_station:'#e67e22',
+  parking:'#95a5a6', other:'#7f8c8d'
+};
+const RISK_COLORS = {Low:'#27ae60', Medium:'#f39c12', High:'#e74c3c'};
+
+const poiLayer = L.layerGroup();
+const riskLayer = L.layerGroup();
+
+fetch('/api/pois/')
+  .then(r => r.json())
+  .then(data => {
+    data.features.forEach(f => {
+      const [lon, lat] = f.geometry.coordinates;
+      const p = f.properties;
+
+      // маркер за категорією
+      L.circleMarker([lat, lon], {
+        radius: 5,
+        fillColor: COLORS[p.category] || '#7f8c8d',
+        color: '#fff', weight: 1, fillOpacity: 0.8
+      }).bindPopup(
+        `<b>${p.name || 'Без назви'}</b><br>Категорія: ${p.category}`
+      ).addTo(poiLayer);
+
+      // маркер за ризиком (для Split Map)
+      if (p.risk_level) {
+        L.circleMarker([lat, lon], {
+          radius: 6,
+          fillColor: RISK_COLORS[p.risk_level] || '#999',
+          color: '#fff', weight: 1, fillOpacity: 0.85
+        }).bindPopup(
+          `<b>${p.name || 'Без назви'}</b><br>Ризик: <b>${p.risk_level}</b><br>Confidence: ${((p.risk_confidence||0)*100).toFixed(1)}%`
+        ).addTo(riskLayer);
+      }
+    });
+    poiLayer.addTo(map);
+  })
+  .catch(e => console.warn('POI load error:', e));
+
+// ── Split Map ─────────────────────────────────────────────────────────────────
+let splitControl = null;
+let splitActive = false;
+
+function toggleSplit() {
+  if (splitActive) {
+    if (splitControl) { splitControl.remove(); splitControl = null; }
+    map.removeLayer(riskLayer);
+    osmTile.remove();
+    darkTile.addTo(map);
+    poiLayer.addTo(map);
+    splitActive = false;
+    document.getElementById('split-btn').textContent = 'Split Map';
+  } else {
+    map.removeLayer(poiLayer);
+    darkTile.remove();
+    osmTile.addTo(map);
+    const riskTile = L.tileLayer(
+      'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {}
+    );
+    riskTile.addTo(map);
+    riskLayer.addTo(map);
+    try {
+      splitControl = L.control.sideBySide(osmTile, riskTile);
+      splitControl.addTo(map);
+    } catch(e) { console.warn('SideBySide unavailable'); }
+    splitActive = true;
+    document.getElementById('split-btn').textContent = '← Закрити Split';
+  }
+}
+
+// ── Клік → GeoXAI ─────────────────────────────────────────────────────────────
+let clickMarker = null;
+
+function getCsrf() {
+  const c = document.cookie.split(';').find(s => s.trim().startsWith('csrftoken='));
+  return c ? c.split('=')[1] : '';
+}
+
+map.on('click', async (e) => {
+  const { lat, lng } = e.latlng;
+
+  if (clickMarker) map.removeLayer(clickMarker);
+  clickMarker = L.circleMarker([lat, lng], {
+    radius: 10, color: '#fff', fillColor: '#4fc3f7',
+    fillOpacity: 0.9, weight: 2
+  }).addTo(map);
+
+  document.getElementById('hint').style.display = 'none';
+  document.getElementById('result').style.display = 'none';
+  document.getElementById('loading').style.display = 'block';
+
+  try {
+    const resp = await fetch('/api/predict/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': getCsrf()
+      },
+      body: JSON.stringify({ lat, lon: lng })
+    });
+
+    if (!resp.ok) {
+      const err = await resp.json();
+      throw new Error(err.error || 'Помилка сервера');
+    }
+
+    const d = await resp.json();
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('result').style.display = 'block';
+
+    // Risk badge
+    const badge = document.getElementById('risk-badge');
+    badge.textContent = d.risk;
+    badge.className = 'risk-badge risk-' + d.risk;
+    document.getElementById('confidence').textContent = (d.confidence * 100).toFixed(1);
+
+    // Probabilities
+    const probaDiv = document.getElementById('proba-bars');
+    probaDiv.innerHTML = '';
+    const pColors = { Low: '#2ecc71', Medium: '#f39c12', High: '#e74c3c' };
+    for (const [cls, prob] of Object.entries(d.probabilities)) {
+      probaDiv.innerHTML += `
+        <div class="prob-row">
+          <div class="prob-name">${cls}</div>
+          <div class="prob-track">
+            <div class="prob-fill" style="width:${(prob*100).toFixed(1)}%;background:${pColors[cls]||'#4fc3f7'}"></div>
+          </div>
+          <div class="prob-pct">${(prob*100).toFixed(1)}%</div>
+        </div>`;
+    }
+
+    // SHAP bars (diverging)
+    const shapDiv = document.getElementById('shap-bars');
+    shapDiv.innerHTML = '';
+    const shapEntries = Object.entries(d.shap).sort((a,b) => Math.abs(b[1]) - Math.abs(a[1]));
+    const maxAbs = Math.max(...shapEntries.map(([,v]) => Math.abs(v)), 0.001);
+    const FEAT_LABELS = {
+      dist_center_m: 'Відстань від центру',
+      poi_500m: 'POI в 500м',
+      hosp_500m: 'Лікарні в 500м',
+      dist_hosp_m: 'До лікарні',
+      dist_police_m: 'До поліції',
+      dist_fire_m: 'До пожежних'
+    };
+    for (const [name, val] of shapEntries) {
+      const w = (Math.abs(val) / maxAbs * 45).toFixed(1);
+      const label = FEAT_LABELS[name] || name;
+      const isPos = val >= 0;
+      shapDiv.innerHTML += `
+        <div class="shap-row">
+          <div class="shap-name" title="${name}">${label}</div>
+          <div class="shap-bar-wrap">
+            ${isPos
+              ? `<div class="shap-bar-pos" style="width:${w}%"></div>`
+              : `<div class="shap-bar-neg" style="width:${w}%"></div>`}
+          </div>
+          <div class="shap-val">${val > 0 ? '+' : ''}${val.toFixed(3)}</div>
+        </div>`;
+    }
+
+    // Raw features
+    const featDiv = document.getElementById('features-table');
+    featDiv.innerHTML = '';
+    const FEAT_UNITS = {
+      dist_center_m: 'м', poi_500m: 'шт', hosp_500m: 'шт',
+      dist_hosp_m: 'м', dist_police_m: 'м', dist_fire_m: 'м'
+    };
+    for (const [name, val] of Object.entries(d.features)) {
+      const label = FEAT_LABELS[name] || name;
+      const unit = FEAT_UNITS[name] || '';
+      featDiv.innerHTML += `
+        <div class="feat-row">
+          <div class="feat-name">${label}</div>
+          <div class="feat-val">${val.toFixed(0)} ${unit}</div>
+        </div>`;
+    }
+
+    // Popup на маркері
+    clickMarker.bindPopup(
+      `<b>Ризик: ${d.risk}</b><br>${(d.confidence*100).toFixed(1)}% впевненість`
+    ).openPopup();
+
+  } catch (err) {
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('result').innerHTML =
+      `<div style="color:#e74c3c;padding:10px">⚠️ ${err.message}</div>`;
+    document.getElementById('result').style.display = 'block';
+  }
+});
+</script>
+</body>
+</html>
