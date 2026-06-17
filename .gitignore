@@ -14,12 +14,11 @@ staticfiles/
 local_settings.py
 db.sqlite3
 
-# ML models
-ml/
+# ML models (зберігаємо модель у репо як deliverable)
+ml/*.png
 
 # Jupyter
 .ipynb_checkpoints/
-*.ipynb
 
 # Generated images (notebook output)
 *.png

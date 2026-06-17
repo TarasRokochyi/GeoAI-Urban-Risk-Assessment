@@ -5,6 +5,15 @@ Click anywhere on the map → get a risk prediction + SHAP explanation.
 
 ![Web App Screenshot](assets/screenshot.png)
 
+## Deliverables
+
+| # | Вимога | Де |
+|---|---|---|
+| 1 | Docker Compose + GeoDjango структура | `docker-compose.yml`, `Dockerfile`, `geoapp/` |
+| 2 | PostGIS з просторовими індексами | `PointField(geography=True)` → GIST index автоматично при `migrate` |
+| 3 | Навчена модель + Spatial CV | `ml/rf_model.joblib`, `lab10.ipynb` (Spatial CV: 0.883 ± 0.03) |
+| 4 | GeoXAI сайт (клік → прогноз + SHAP) | `geoapp/views.py`, `geoapp/templates/geoapp/map.html` |
+
 ## Stack
 
 - **Backend:** Django 4.2 + GeoDjango + PostGIS
